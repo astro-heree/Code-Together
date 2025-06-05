@@ -29,7 +29,7 @@ const Editor = ({ socketRef, roomId, onCodeChange }) => {
         const code = instance.getValue();
         onCodeChange(code);
 
-        if (origin !== "setValue") {
+        if (origin !== "setValue" && socketRef.current && socketRef.current.connected) {
           socketRef.current.emit(ACTIONS.CODE_CHANGE, {
             roomId,
             code,
@@ -42,18 +42,25 @@ const Editor = ({ socketRef, roomId, onCodeChange }) => {
   }, []);
 
   useEffect(() => {
-    if (socketRef.current) {
-      socketRef.current.on(ACTIONS.CODE_CHANGE, ({ code }) => {
-        if (code !== null) {
-          editorRef.current.setValue(code);
+    if (socketRef.current && editorRef.current) {
+      const handleCodeChange = ({ code }) => {
+        if (code !== null && editorRef.current) {
+          const currentCode = editorRef.current.getValue();
+          if (currentCode !== code) {
+            editorRef.current.setValue(code);
+          }
         }
-      });
-    }
+      };
 
-    return () => {
-      socketRef.current?.off(ACTIONS.CODE_CHANGE);
-    };
-  }, [socketRef.current]);
+      socketRef.current.on(ACTIONS.CODE_CHANGE, handleCodeChange);
+
+      return () => {
+        if (socketRef.current) {
+          socketRef.current.off(ACTIONS.CODE_CHANGE, handleCodeChange);
+        }
+      };
+    }
+  }, [socketRef.current, editorRef.current]);
 
   return <textarea id="realtimeEditor"></textarea>;
 };

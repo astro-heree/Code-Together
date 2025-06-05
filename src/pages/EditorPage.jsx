@@ -18,49 +18,77 @@ const EditorPage = () => {
 
   useEffect(() => {
     const init = async () => {
-      socketRef.current = await initSocket();
+      try {
+        socketRef.current = await initSocket();
 
-      socketRef.current.on('connect_error', (err) => handleErrors(err));
-      socketRef.current.on('connect_failed', (err) => handleErrors(err));
+        socketRef.current.on('connect_error', (err) => handleErrors(err));
+        socketRef.current.on('connect_failed', (err) => handleErrors(err));
 
-      function handleErrors(e) {
-        toast.error('Socket connection failed, try again later.');
+        function handleErrors(e) {
+          console.error('Socket connection error:', e);
+          toast.error('Socket connection failed, try again later.');
+          reactNavigator('/');
+        }
+
+        // Wait for connection before joining
+        socketRef.current.on('connect', () => {
+          // console.log('Socket connected successfully');
+          socketRef.current.emit(ACTIONS.JOIN, {
+            roomId,
+            username: location.state?.username,
+          });
+        });
+
+        // If already connected, join immediately
+        if (socketRef.current.connected) {
+          socketRef.current.emit(ACTIONS.JOIN, {
+            roomId,
+            username: location.state?.username,
+          });
+        }
+
+        // Listening for joined events
+        socketRef.current.on(ACTIONS.JOINED, ({ clients, username, socketId }) => {
+          if (username !== location.state?.username) {
+            toast.success(`${username} joined the room.`);
+          }
+          setClients(clients);
+          
+          // Only sync code if we have some and socket is connected
+          if (codeRef.current && socketRef.current.connected) {
+            socketRef.current.emit(ACTIONS.SYNC_CODE, {
+              code: codeRef.current,
+              socketId
+            });
+          }
+        });
+
+        //listening for disconnected
+        socketRef.current.on(ACTIONS.DISCONNECTED, ({ socketId, username }) => {
+          toast.success(`${username} left the room.`);
+          setClients((prev) => {
+            return prev.filter((client) => client.socketId !== socketId);
+          });
+        });
+
+      } catch (error) {
+        console.error('Failed to initialize socket:', error);
+        toast.error('Failed to connect to server');
         reactNavigator('/');
       }
-
-      socketRef.current.emit(ACTIONS.JOIN, {
-        roomId,
-        username: location.state?.username,
-      });
-
-      // Listening for joined events
-      socketRef.current.on(ACTIONS.JOINED, ({ clients, username, socketId }) => {
-        if (username !== location.state?.username) {
-          toast.success(`${username} joined the room.`);
-        }
-        setClients(clients);
-        socketRef.current.emit(ACTIONS.SYNC_CODE, {
-          code: codeRef.current,
-          socketId
-        });
-      });
-
-      //listening for disconnected
-      socketRef.current.on(ACTIONS.DISCONNECTED, ({ socketId, username }) => {
-        toast.success(`${username} left the room.`);
-        setClients((prev) => {
-          return prev.filter((client) => client.socketId !== socketId);
-        });
-      });
-
     };
 
     init();
     
     return () => {
-      socketRef.current?.disconnect();
-      socketRef.current?.off(ACTIONS.JOINED);
-      socketRef.current?.off(ACTIONS.DISCONNECTED);
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current.off(ACTIONS.JOINED);
+        socketRef.current.off(ACTIONS.DISCONNECTED);
+        socketRef.current.off('connect');
+        socketRef.current.off('connect_error');
+        socketRef.current.off('connect_failed');
+      }
     };
 
   }, []);

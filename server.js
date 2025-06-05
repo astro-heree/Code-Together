@@ -6,7 +6,12 @@ const { Server } = require('socket.io');
 const ACTIONS = require('./src/Actions');
 
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+    cors: {
+        origin: process.env.CLIENT_URL || "http://localhost:3000",
+        methods: ["GET", "POST"]
+    }
+});
 
 app.use(express.static('build'));
 app.use((req, res, next) => {
@@ -37,16 +42,20 @@ io.on('connection', (socket) => {
                 username,
                 socketId: socket.id,
             });
-        })
+        });
+        
+        // console.log(`User ${username} joined room ${roomId}`);
     });
 
     socket.on(ACTIONS.CODE_CHANGE, ({ roomId, code }) => {
+        // console.log(`Code change in room ${roomId}`);
         socket.in(roomId).emit(ACTIONS.CODE_CHANGE, { code });
     });
 
     socket.on(ACTIONS.SYNC_CODE, ({ socketId, code }) => {
-        io.to(socketId).emit(ACTIONS.CODE_CHANGE, {code});
-    })
+        // console.log(`Syncing code to socket ${socketId}`);
+        io.to(socketId).emit(ACTIONS.CODE_CHANGE, { code });
+    });
 
 
     socket.on('disconnecting', () => {
