@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Client from '../components/Client';
 import Editor from '../components/Editor';
+import MediaControls from '../components/MediaControls';
 import { initSocket } from '../socket';
 import ACTIONS from '../Actions';
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import CodeRun from '../components/CodeRun';
+import { useLiveKit } from '../contexts/LiveKitContext';
 
 const EditorPage = () => {
   const codeRef = useRef(null);
@@ -15,6 +17,68 @@ const EditorPage = () => {
   const reactNavigator = useNavigate();
 
   const [clients, setClients] = useState([]);
+  const [audioContextEnabled, setAudioContextEnabled] = useState(false);
+  
+  const {
+    connectToRoom,
+    disconnectFromRoom,
+    toggleMic,
+    toggleVideo,
+    isMicOn,
+    isVideoOn,
+    localVideoTrack,
+    localAudioTrack,
+    getParticipantVideoTrack,
+    getParticipantAudioTrack,
+    isParticipantVideoEnabled,
+    isParticipantAudioEnabled,
+    isConnected: isLiveKitConnected
+  } = useLiveKit();
+
+  // Function to enable audio context (required for audio playback)
+  const enableAudioContext = async () => {
+    try {
+      if (typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext)) {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+        setAudioContextEnabled(true);
+        toast.success('Audio enabled! You should now hear other participants.');
+      }
+    } catch (error) {
+      console.error('Failed to enable audio context:', error);
+      toast.error('Failed to enable audio');
+    }
+  };
+
+  // Function to get LiveKit token and connect
+  const connectToLiveKit = async () => {
+    try {
+      const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8080';
+      const response = await fetch(`${backendUrl}/api/get-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          roomName: roomId,
+          participantName: location.state?.username,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get LiveKit token');
+      }
+
+      const { token, wsUrl } = await response.json();
+      await connectToRoom(token, wsUrl, roomId, location.state?.username);
+      toast.success('Connected to voice/video');
+    } catch (error) {
+      console.error('Failed to connect to LiveKit:', error);
+      toast.error('Failed to connect to voice/video');
+    }
+  };
 
   useEffect(() => {
     const init = async () => {
@@ -71,8 +135,11 @@ const EditorPage = () => {
           });
         });
 
+        // Connect to LiveKit after socket connection
+        await connectToLiveKit();
+
       } catch (error) {
-        console.error('Failed to initialize socket:', error);
+        console.error('Failed to initialize:', error);
         toast.error('Failed to connect to server');
         reactNavigator('/');
       }
@@ -89,6 +156,7 @@ const EditorPage = () => {
         socketRef.current.off('connect_error');
         socketRef.current.off('connect_failed');
       }
+      disconnectFromRoom();
     };
 
   }, []);
@@ -103,6 +171,7 @@ const EditorPage = () => {
   }
 
   function leaveRoom() {
+    disconnectFromRoom();
     reactNavigator('/');
   }
 
@@ -119,11 +188,51 @@ const EditorPage = () => {
           </div>
           <h3>Connected</h3>
           <div className="clientsList">
-            {clients.map((client) => (
-              <Client key={client.socketId} username={client.username} />
-            ))}
+            {clients.map((client) => {
+              // Check if this is the current user (local participant)
+              const isLocalUser = client.username === location.state?.username;
+              const videoTrack = isLocalUser ? localVideoTrack : getParticipantVideoTrack(client.username);
+              const audioTrack = isLocalUser ? localAudioTrack : getParticipantAudioTrack(client.username);
+              const isVideoEnabled = isLocalUser ? isVideoOn : isParticipantVideoEnabled(client.username);
+              const isAudioEnabled = isLocalUser ? isMicOn : isParticipantAudioEnabled(client.username);
+              
+              return (
+                <Client 
+                  key={client.socketId} 
+                  username={client.username}
+                  videoTrack={videoTrack}
+                  audioTrack={audioTrack}
+                  isVideoEnabled={isVideoEnabled}
+                  isAudioEnabled={isAudioEnabled}
+                  isLocalUser={isLocalUser}
+                />
+              );
+            })}
           </div>
         </div>
+
+        <MediaControls
+          isMicOn={isMicOn}
+          isVideoOn={isVideoOn}
+          onToggleMic={toggleMic}
+          onToggleVideo={toggleVideo}
+        />
+
+        {/* Audio Enable Button - shows when audio context not enabled */}
+        {!audioContextEnabled && (
+          <button 
+            className="btn audioEnableBtn" 
+            onClick={enableAudioContext}
+            style={{ 
+              background: '#ffa500', 
+              color: '#fff', 
+              marginBottom: '10px',
+              width: '100%'
+            }}
+          >
+            🔊 Enable Audio to Hear Others
+          </button>
+        )}
 
         <button className="btn copyBtn" onClick={copyRoomId}>
           Copy ROOM ID

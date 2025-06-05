@@ -182,3 +182,73 @@ footer a:hover {
     margin-right: 10px;
 }
 
+/* ******************* Media Controls ********************** */
+
+.mediaControls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.mediaControls .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+    border-radius: 5px;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease-in-out;
+    width: 100%;
+}
+
+.micOn, .videoOn {
+    background: #4aed88;
+    color: #fff;
+}
+
+.micOn:hover, .videoOn:hover {
+    background: #2b824c;
+}
+
+.micOff, .videoOff {
+    background: #ff6b6b;
+    color: #fff;
+}
+
+.micOff:hover, .videoOff:hover {
+    background: #e55656;
+}
+
+/* ******************* Video Components ********************** */
+
+.clientVideo {
+    width: 50px;
+    height: 50px;
+    border-radius: 14px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #2f2f3d;
+}
+
+.participantVideo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 14px;
+}
+
+.copyBtn {
+    background: #4aed88;
+    width: 100%;
+    margin-bottom: 10px;
+}
+
+.copyBtn:hover {
+    background: #2b824c;
+}
+
