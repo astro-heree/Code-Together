@@ -57,6 +57,27 @@ io.on('connection', (socket) => {
         io.to(socketId).emit(ACTIONS.CODE_CHANGE, { code });
     });
 
+    // CodeRun synchronization events
+    socket.on(ACTIONS.INPUT_CHANGE, ({ roomId, input }) => {
+        socket.in(roomId).emit(ACTIONS.INPUT_CHANGE, { input });
+    });
+
+    socket.on(ACTIONS.OUTPUT_CHANGE, ({ roomId, output }) => {
+        socket.in(roomId).emit(ACTIONS.OUTPUT_CHANGE, { output });
+    });
+
+    socket.on(ACTIONS.LANGUAGE_CHANGE, ({ roomId, language }) => {
+        socket.in(roomId).emit(ACTIONS.LANGUAGE_CHANGE, { language });
+    });
+
+    socket.on(ACTIONS.STATE_CHANGE, ({ roomId, currentState }) => {
+        socket.in(roomId).emit(ACTIONS.STATE_CHANGE, { currentState });
+    });
+
+    socket.on(ACTIONS.CODE_RUN, ({ roomId }) => {
+        socket.in(roomId).emit(ACTIONS.CODE_RUN, {});
+    });
+
 
     socket.on('disconnecting', () => {
         const rooms = [...socket.rooms];
