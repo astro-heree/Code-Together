@@ -17,7 +17,6 @@ const EditorPage = () => {
   const reactNavigator = useNavigate();
 
   const [clients, setClients] = useState([]);
-  const [audioContextEnabled, setAudioContextEnabled] = useState(false);
   
   const {
     connectToRoom,
@@ -35,24 +34,6 @@ const EditorPage = () => {
     isConnected: isLiveKitConnected
   } = useLiveKit();
 
-  // Function to enable audio context (required for audio playback)
-  const enableAudioContext = async () => {
-    try {
-      if (typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext)) {
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioContext.state === 'suspended') {
-          await audioContext.resume();
-        }
-        setAudioContextEnabled(true);
-        toast.success('Audio enabled! You should now hear other participants.');
-      }
-    } catch (error) {
-      console.error('Failed to enable audio context:', error);
-      toast.error('Failed to enable audio');
-    }
-  };
-
-  // Function to get LiveKit token and connect
   const connectToLiveKit = async () => {
     try {
       const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8080';
@@ -94,16 +75,13 @@ const EditorPage = () => {
           reactNavigator('/');
         }
 
-        // Wait for connection before joining
         socketRef.current.on('connect', () => {
-          // console.log('Socket connected successfully');
           socketRef.current.emit(ACTIONS.JOIN, {
             roomId,
             username: location.state?.username,
           });
         });
 
-        // If already connected, join immediately
         if (socketRef.current.connected) {
           socketRef.current.emit(ACTIONS.JOIN, {
             roomId,
@@ -111,14 +89,12 @@ const EditorPage = () => {
           });
         }
 
-        // Listening for joined events
         socketRef.current.on(ACTIONS.JOINED, ({ clients, username, socketId }) => {
           if (username !== location.state?.username) {
             toast.success(`${username} joined the room.`);
           }
           setClients(clients);
           
-          // Only sync code if we have some and socket is connected
           if (codeRef.current && socketRef.current.connected) {
             socketRef.current.emit(ACTIONS.SYNC_CODE, {
               code: codeRef.current,
@@ -127,7 +103,6 @@ const EditorPage = () => {
           }
         });
 
-        //listening for disconnected
         socketRef.current.on(ACTIONS.DISCONNECTED, ({ socketId, username }) => {
           toast.success(`${username} left the room.`);
           setClients((prev) => {
@@ -135,7 +110,6 @@ const EditorPage = () => {
           });
         });
 
-        // Connect to LiveKit after socket connection
         await connectToLiveKit();
 
       } catch (error) {
@@ -189,7 +163,6 @@ const EditorPage = () => {
           <h3>Connected</h3>
           <div className="clientsList">
             {clients.map((client) => {
-              // Check if this is the current user (local participant)
               const isLocalUser = client.username === location.state?.username;
               const videoTrack = isLocalUser ? localVideoTrack : getParticipantVideoTrack(client.username);
               const audioTrack = isLocalUser ? localAudioTrack : getParticipantAudioTrack(client.username);
@@ -198,48 +171,29 @@ const EditorPage = () => {
               
               return (
                 <Client 
-                  key={client.socketId} 
+                  key={client.socketId}
                   username={client.username}
                   videoTrack={videoTrack}
                   audioTrack={audioTrack}
                   isVideoEnabled={isVideoEnabled}
                   isAudioEnabled={isAudioEnabled}
-                  isLocalUser={isLocalUser}
                 />
               );
             })}
           </div>
-        </div>
-
-        <MediaControls
-          isMicOn={isMicOn}
-          isVideoOn={isVideoOn}
-          onToggleMic={toggleMic}
-          onToggleVideo={toggleVideo}
-        />
-
-        {/* Audio Enable Button - shows when audio context not enabled */}
-        {!audioContextEnabled && (
-          <button 
-            className="btn audioEnableBtn" 
-            onClick={enableAudioContext}
-            style={{ 
-              background: '#ffa500', 
-              color: '#fff', 
-              marginBottom: '10px',
-              width: '100%'
-            }}
-          >
-            🔊 Enable Audio to Hear Others
+          <MediaControls
+            isMicOn={isMicOn}
+            isVideoOn={isVideoOn}
+            onToggleMic={toggleMic}
+            onToggleVideo={toggleVideo}
+          />
+          <button className="btn copyBtn" onClick={copyRoomId}>
+            Copy Room ID
           </button>
-        )}
-
-        <button className="btn copyBtn" onClick={copyRoomId}>
-          Copy ROOM ID
-        </button>
-        <button className="btn leaveBtn" onClick={leaveRoom}>
-          Leave
-        </button>
+          <button className="btn leaveBtn" onClick={leaveRoom}>
+            Leave
+          </button>
+        </div>
       </div>
       <div className="editorWrap">
         <Editor
@@ -249,10 +203,10 @@ const EditorPage = () => {
             codeRef.current = code;
           }}
         />
-        <CodeRun codeRef={codeRef} />
       </div>
+      <CodeRun code={codeRef.current} />
     </div>
   );
-}
+};
 
 export default EditorPage;

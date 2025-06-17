@@ -19,17 +19,31 @@ export const LiveKitProvider = ({ children }) => {
   const [isVideoOn, setIsVideoOn] = useState(false);
   const [localVideoTrack, setLocalVideoTrack] = useState(null);
   const [localAudioTrack, setLocalAudioTrack] = useState(null);
+  const [audioContextEnabled, setAudioContextEnabled] = useState(false);
   
   const roomRef = useRef(null);
+
+  // Function to enable audio context
+  const enableAudioContext = async () => {
+    try {
+      if (typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext)) {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+        setAudioContextEnabled(true);
+      }
+    } catch (error) {
+      console.error('Failed to enable audio context:', error);
+    }
+  };
 
   const connectToRoom = async (token, wsUrl, roomName, participantName) => {
     try {
       const newRoom = new Room();
       roomRef.current = newRoom;
       
-      // Set up event listeners using proper RoomEvent constants
       newRoom.on(RoomEvent.ParticipantConnected, (participant) => {
-        // Always add participant to map when they connect
         setParticipants(prev => {
           const newMap = new Map(prev);
           newMap.set(participant.identity, participant);
@@ -45,25 +59,19 @@ export const LiveKitProvider = ({ children }) => {
         });
       });
 
-      // Proper track subscription handling as per LiveKit docs
       newRoom.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-        // Handle audio tracks - ensure they are set up for playback
         if (track.kind === Track.Kind.Audio) {
-          // Enable the publication to ensure audio flows
           if (publication.setEnabled) {
             publication.setEnabled(true);
           }
         }
         
-        // Handle video tracks
         if (track.kind === Track.Kind.Video) {
-          // Enable the publication to ensure video flows
           if (publication.setEnabled) {
             publication.setEnabled(true);
           }
         }
         
-        // Update participants state to ensure latest participant data and trigger re-render
         setParticipants(prev => {
           const newMap = new Map(prev);
           newMap.set(participant.identity, participant);
@@ -71,8 +79,7 @@ export const LiveKitProvider = ({ children }) => {
         });
       });
 
-                    newRoom.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
-        // Update participants state to ensure latest participant data and trigger re-render
+      newRoom.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
         setParticipants(prev => {
           const newMap = new Map(prev);
           newMap.set(participant.identity, participant);
@@ -80,14 +87,11 @@ export const LiveKitProvider = ({ children }) => {
         });
       });
 
-            // Track published events
       newRoom.on(RoomEvent.TrackPublished, (publication, participant) => {
-        // Automatically subscribe to published tracks
         if (publication && publication.setSubscribed) {
           publication.setSubscribed(true);
         }
         
-        // Update participants to trigger re-render
         setParticipants(prev => {
           const newMap = new Map(prev);
           newMap.set(participant.identity, participant);
@@ -95,21 +99,18 @@ export const LiveKitProvider = ({ children }) => {
         });
       });
 
-      // Track unpublished events  
       newRoom.on(RoomEvent.TrackUnpublished, (publication, participant) => {
         // Track unpublished - no action needed
       });
 
-      // Connect to the room with explicit options
       await newRoom.connect(wsUrl, token, {
-        autoSubscribe: true,  // Ensure auto-subscription is enabled
+        autoSubscribe: true,
         audio: true,
         video: true
       });
       setRoom(newRoom);
       setIsConnected(true);
 
-      // Add local participant to the participants map
       if (newRoom.localParticipant) {
         setParticipants(prev => {
           const newMap = new Map(prev);
@@ -118,7 +119,6 @@ export const LiveKitProvider = ({ children }) => {
         });
       }
 
-      // Initialize participants and subscribe to existing tracks
       if (newRoom.participants && typeof newRoom.participants.forEach === 'function') {
         newRoom.participants.forEach((participant) => {
           setParticipants(prev => {
@@ -127,7 +127,6 @@ export const LiveKitProvider = ({ children }) => {
             return newMap;
           });
           
-          // Subscribe to existing tracks from participants already in room
           if (participant.trackPublications) {
             participant.trackPublications.forEach((publication) => {
               if (publication && publication.setSubscribed) {
@@ -137,7 +136,6 @@ export const LiveKitProvider = ({ children }) => {
           }
         });
       } else if (newRoom.participants && newRoom.participants.size > 0) {
-        // Handle if participants is a Map
         for (const [identity, participant] of newRoom.participants) {
           setParticipants(prev => {
             const newMap = new Map(prev);
@@ -145,7 +143,6 @@ export const LiveKitProvider = ({ children }) => {
             return newMap;
           });
           
-          // Subscribe to existing tracks from participants already in room
           if (participant.trackPublications) {
             participant.trackPublications.forEach((publication) => {
               if (publication && publication.setSubscribed) {
@@ -172,6 +169,7 @@ export const LiveKitProvider = ({ children }) => {
       setLocalAudioTrack(null);
       setIsMicOn(false);
       setIsVideoOn(false);
+      setAudioContextEnabled(false);
     }
   };
 
@@ -179,6 +177,11 @@ export const LiveKitProvider = ({ children }) => {
     if (!room) return;
 
     try {
+      // First, ensure audio context is enabled when turning on mic
+      if (!isMicOn && !audioContextEnabled) {
+        await enableAudioContext();
+      }
+
       if (isMicOn) {
         // Turn off mic
         await room.localParticipant.setMicrophoneEnabled(false);
@@ -189,13 +192,11 @@ export const LiveKitProvider = ({ children }) => {
         await room.localParticipant.setMicrophoneEnabled(true);
         setIsMicOn(true);
         
-        // Get the local audio track - try different source names
         let audioPublication = room.localParticipant.getTrackPublication('microphone');
         if (!audioPublication) {
           audioPublication = room.localParticipant.getTrackPublication('mic');
         }
         if (!audioPublication) {
-          // Get the first audio track
           const audioTracks = Array.from(room.localParticipant.trackPublications.values())
             .filter(pub => pub.kind === Track.Kind.Audio);
           if (audioTracks.length > 0) {
@@ -208,7 +209,7 @@ export const LiveKitProvider = ({ children }) => {
         }
       }
     } catch (error) {
-      console.error('Error toggling microphone:', error);
+      console.error('Failed to toggle microphone:', error);
     }
   };
 
@@ -378,6 +379,7 @@ export const LiveKitProvider = ({ children }) => {
     getParticipantAudioTrack,
     isParticipantVideoEnabled,
     isParticipantAudioEnabled,
+    audioContextEnabled
   };
 
   return (

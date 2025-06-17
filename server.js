@@ -9,21 +9,22 @@ const ACTIONS = require('./src/Actions');
 const { AccessToken } = require('livekit-server-sdk');
 
 const server = http.createServer(app);
-const io = new Server(server, {
-    cors: {
-        origin: true, // Allow all origins for ngrok/development
-        methods: ["GET", "POST"],
-        credentials: true
-    }
-});
 
-// CORS middleware for Express routes - Allow anyone to access (good for ngrok/development)
+// Enable CORS before creating Socket.IO server
 app.use(cors({
-    origin: true, // Allow all origins
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    origin: ['http://localhost:3000', 'http://localhost:8080'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+const io = new Server(server, {
+    cors: {
+        origin: ['http://localhost:3000', 'http://localhost:8080'],
+        methods: ['GET', 'POST'],
+        credentials: true
+    }
+});
 
 // Middleware to parse JSON
 app.use(express.json());
@@ -34,7 +35,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// LiveKit token generation endpoint - FIXED VERSION
+// LiveKit token generation endpoint
 app.post('/api/get-token', async (req, res) => {
     const { roomName, participantName } = req.body;
     
@@ -46,14 +47,9 @@ app.post('/api/get-token', async (req, res) => {
     const apiSecret = process.env.LIVEKIT_API_SECRET;
     const wsUrl = process.env.LIVEKIT_URL;
 
-    console.log('Environment variables check:');
-    console.log('API Key:', apiKey ? 'Present' : 'Missing');
-    console.log('API Secret:', apiSecret ? 'Present' : 'Missing');
-    console.log('WS URL:', wsUrl);
-
     if (!apiKey || !apiSecret || !wsUrl) {
         return res.status(500).json({ 
-            error: 'Missing LiveKit credentials. Check your .env file.',
+            error: 'Missing LiveKit credentials',
             details: {
                 apiKey: !!apiKey,
                 apiSecret: !!apiSecret,
@@ -65,10 +61,9 @@ app.post('/api/get-token', async (req, res) => {
     try {
         const at = new AccessToken(apiKey, apiSecret, {
             identity: participantName,
-            ttl: '10m', // Token expires in 10 minutes
+            ttl: '10m'
         });
         
-        // Use simplified grant structure as per official docs
         at.addGrant({ 
             roomJoin: true, 
             room: roomName,
@@ -76,22 +71,15 @@ app.post('/api/get-token', async (req, res) => {
             canSubscribe: true
         });
 
-        // IMPORTANT: await the async toJwt() method
         const token = await at.toJwt();
-        
-        console.log('Generated token for:', participantName, 'in room:', roomName);
-        console.log('Token length:', token.length);
-        console.log('Token preview:', token.substring(0, 50) + '...');
-        
         res.json({ token, wsUrl });
     } catch (error) {
         console.error('Error generating token:', error);
-        console.error('Error stack:', error.stack);
         res.status(500).json({ error: 'Failed to generate token', details: error.message });
     }
 });
 
-// Add a simple health check endpoint for debugging
+// Add a health check endpoint
 app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', message: 'Server is running' });
 });
@@ -108,7 +96,6 @@ function getAllConnectedClients(roomId) {
 }
 
 io.on('connection', (socket) => {
-
     socket.on(ACTIONS.JOIN, ({ roomId, username }) => {
         userSocketMap[socket.id] = username;
         socket.join(roomId);
@@ -121,20 +108,15 @@ io.on('connection', (socket) => {
                 socketId: socket.id,
             });
         });
-        
-        // console.log(`User ${username} joined room ${roomId}`);
     });
 
     socket.on(ACTIONS.CODE_CHANGE, ({ roomId, code }) => {
-        // console.log(`Code change in room ${roomId}`);
         socket.in(roomId).emit(ACTIONS.CODE_CHANGE, { code });
     });
 
     socket.on(ACTIONS.SYNC_CODE, ({ socketId, code }) => {
-        // console.log(`Syncing code to socket ${socketId}`);
         io.to(socketId).emit(ACTIONS.CODE_CHANGE, { code });
     });
-
 
     socket.on('disconnecting', () => {
         const rooms = [...socket.rooms];
@@ -147,14 +129,16 @@ io.on('connection', (socket) => {
 
         delete userSocketMap[socket.id];
         socket.leave();
-    })
-})
+    });
+});
 
-// Serve static files and React app - MOVED TO END
-app.use(express.static('build'));
-app.use((req, res, next) => {
-    res.sendFile(path.join(__dirname, 'build', 'index.html'));
-})
+// Serve static files in production
+if (process.env.NODE_ENV === 'production') {
+    app.use(express.static('build'));
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(__dirname, 'build', 'index.html'));
+    });
+}
 
 const PORT = process.env.PORT || 8080;
-server.listen(PORT, () => console.log(`Listening on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
