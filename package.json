@@ -2,9 +2,6 @@
   "name": "code-editor",
   "version": "0.1.0",
   "private": true,
-  "engines": {
-    "node": "18.x"
-  },
   "dependencies": {
     "@livekit/components-react": "^2.9.9",
     "@testing-library/jest-dom": "^5.16.4",

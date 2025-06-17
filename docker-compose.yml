@@ -1,0 +1,18 @@
+services:
+  code-together:
+    build: 
+      context: .
+      args:
+        - REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL}
+    ports:
+      - "8080:8080"
+    environment:
+      - REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+      - LIVEKIT_URL=${LIVEKIT_URL}
+      - NODE_ENV=${NODE_ENV}
+    volumes:
+      - .:/app
+      - /app/node_modules
+    restart: unless-stopped 

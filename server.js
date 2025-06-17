@@ -10,9 +10,12 @@ const { AccessToken } = require('livekit-server-sdk');
 
 const server = http.createServer(app);
 
+// Get backend URL from environment variable
+const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8080';
+
 // Enable CORS before creating Socket.IO server
 app.use(cors({
-    origin: ['http://localhost:3000', 'http://localhost:8080'],
+    origin: [backendUrl, 'http://localhost:3000', 'http://localhost:8080'],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization']
@@ -20,7 +23,7 @@ app.use(cors({
 
 const io = new Server(server, {
     cors: {
-        origin: ['http://localhost:3000', 'http://localhost:8080'],
+        origin: [backendUrl, 'http://localhost:3000', 'http://localhost:8080'],
         methods: ['GET', 'POST'],
         credentials: true
     }
