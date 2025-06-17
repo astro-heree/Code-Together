@@ -203,6 +203,7 @@ const EditorPage = () => {
             codeRef.current = code;
           }}
         />
+        <CodeRun codeRef={codeRef} socketRef={socketRef} roomId={roomId} />
       </div>
       <CodeRun code={codeRef.current} />
     </div>
