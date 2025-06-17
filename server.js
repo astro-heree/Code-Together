@@ -1,22 +1,88 @@
+require('dotenv').config();
 const express = require('express');
+const cors = require('cors');
 const app = express();
 const http = require('http');
 const path = require('path');
 const { Server } = require('socket.io');
 const ACTIONS = require('./src/Actions');
+const { AccessToken } = require('livekit-server-sdk');
 
 const server = http.createServer(app);
+
+// Enable CORS before creating Socket.IO server
+app.use(cors({
+    origin: ['http://localhost:3000', 'http://localhost:8080'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 const io = new Server(server, {
     cors: {
-        origin: process.env.CLIENT_URL || "http://localhost:3000",
-        methods: ["GET", "POST"]
+        origin: ['http://localhost:3000', 'http://localhost:8080'],
+        methods: ['GET', 'POST'],
+        credentials: true
     }
 });
 
-app.use(express.static('build'));
+// Middleware to parse JSON
+app.use(express.json());
+
+// Debug middleware to log all requests
 app.use((req, res, next) => {
-    res.sendFile(path.join(__dirname, 'build', 'index.html'));
-})
+    console.log(`${req.method} ${req.path} - From: ${req.get('Origin') || req.get('Host')}`);
+    next();
+});
+
+// LiveKit token generation endpoint
+app.post('/api/get-token', async (req, res) => {
+    const { roomName, participantName } = req.body;
+    
+    if (!roomName || !participantName) {
+        return res.status(400).json({ error: 'roomName and participantName are required' });
+    }
+
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
+    const wsUrl = process.env.LIVEKIT_URL;
+
+    if (!apiKey || !apiSecret || !wsUrl) {
+        return res.status(500).json({ 
+            error: 'Missing LiveKit credentials',
+            details: {
+                apiKey: !!apiKey,
+                apiSecret: !!apiSecret,
+                wsUrl: !!wsUrl
+            }
+        });
+    }
+
+    try {
+        const at = new AccessToken(apiKey, apiSecret, {
+            identity: participantName,
+            ttl: '10m'
+        });
+        
+        at.addGrant({ 
+            roomJoin: true, 
+            room: roomName,
+            canPublish: true,
+            canSubscribe: true
+        });
+
+        const token = await at.toJwt();
+        res.json({ token, wsUrl });
+    } catch (error) {
+        console.error('Error generating token:', error);
+        res.status(500).json({ error: 'Failed to generate token', details: error.message });
+    }
+});
+
+// Add a health check endpoint
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'OK', message: 'Server is running' });
+});
 
 const userSocketMap = {};
 
@@ -30,7 +96,6 @@ function getAllConnectedClients(roomId) {
 }
 
 io.on('connection', (socket) => {
-
     socket.on(ACTIONS.JOIN, ({ roomId, username }) => {
         userSocketMap[socket.id] = username;
         socket.join(roomId);
@@ -43,17 +108,13 @@ io.on('connection', (socket) => {
                 socketId: socket.id,
             });
         });
-        
-        // console.log(`User ${username} joined room ${roomId}`);
     });
 
     socket.on(ACTIONS.CODE_CHANGE, ({ roomId, code }) => {
-        // console.log(`Code change in room ${roomId}`);
         socket.in(roomId).emit(ACTIONS.CODE_CHANGE, { code });
     });
 
     socket.on(ACTIONS.SYNC_CODE, ({ socketId, code }) => {
-        // console.log(`Syncing code to socket ${socketId}`);
         io.to(socketId).emit(ACTIONS.CODE_CHANGE, { code });
     });
 
@@ -90,9 +151,16 @@ io.on('connection', (socket) => {
 
         delete userSocketMap[socket.id];
         socket.leave();
-    })
-})
+    });
+});
 
+// Serve static files in production
+if (process.env.NODE_ENV === 'production') {
+    app.use(express.static('build'));
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(__dirname, 'build', 'index.html'));
+    });
+}
 
 const PORT = process.env.PORT || 8080;
-server.listen(PORT, () => console.log(`Listening on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));

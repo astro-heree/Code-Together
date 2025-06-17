@@ -6,9 +6,9 @@ export const initSocket = async () => {
         reconnectionAttempts: 'Infinity',
         timeout: 10000,
         transports: ['websocket'],
+        withCredentials: true
     };
 
-    // Use development URL if REACT_APP_BACKEND_URL is not set
-    const serverPath = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8080';
-    return io(serverPath, options);
+    const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8080';
+    return io(backendUrl, options);
 };

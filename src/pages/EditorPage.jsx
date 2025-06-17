@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Client from '../components/Client';
 import Editor from '../components/Editor';
+import MediaControls from '../components/MediaControls';
 import { initSocket } from '../socket';
 import ACTIONS from '../Actions';
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import CodeRun from '../components/CodeRun';
+import { useLiveKit } from '../contexts/LiveKitContext';
 
 const EditorPage = () => {
   const codeRef = useRef(null);
@@ -15,6 +17,49 @@ const EditorPage = () => {
   const reactNavigator = useNavigate();
 
   const [clients, setClients] = useState([]);
+  
+  const {
+    connectToRoom,
+    disconnectFromRoom,
+    toggleMic,
+    toggleVideo,
+    isMicOn,
+    isVideoOn,
+    localVideoTrack,
+    localAudioTrack,
+    getParticipantVideoTrack,
+    getParticipantAudioTrack,
+    isParticipantVideoEnabled,
+    isParticipantAudioEnabled,
+    isConnected: isLiveKitConnected
+  } = useLiveKit();
+
+  const connectToLiveKit = async () => {
+    try {
+      const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8080';
+      const response = await fetch(`${backendUrl}/api/get-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          roomName: roomId,
+          participantName: location.state?.username,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get LiveKit token');
+      }
+
+      const { token, wsUrl } = await response.json();
+      await connectToRoom(token, wsUrl, roomId, location.state?.username);
+      toast.success('Connected to voice/video');
+    } catch (error) {
+      console.error('Failed to connect to LiveKit:', error);
+      toast.error('Failed to connect to voice/video');
+    }
+  };
 
   useEffect(() => {
     const init = async () => {
@@ -30,16 +75,13 @@ const EditorPage = () => {
           reactNavigator('/');
         }
 
-        // Wait for connection before joining
         socketRef.current.on('connect', () => {
-          // console.log('Socket connected successfully');
           socketRef.current.emit(ACTIONS.JOIN, {
             roomId,
             username: location.state?.username,
           });
         });
 
-        // If already connected, join immediately
         if (socketRef.current.connected) {
           socketRef.current.emit(ACTIONS.JOIN, {
             roomId,
@@ -47,14 +89,12 @@ const EditorPage = () => {
           });
         }
 
-        // Listening for joined events
         socketRef.current.on(ACTIONS.JOINED, ({ clients, username, socketId }) => {
           if (username !== location.state?.username) {
             toast.success(`${username} joined the room.`);
           }
           setClients(clients);
           
-          // Only sync code if we have some and socket is connected
           if (codeRef.current && socketRef.current.connected) {
             socketRef.current.emit(ACTIONS.SYNC_CODE, {
               code: codeRef.current,
@@ -63,7 +103,6 @@ const EditorPage = () => {
           }
         });
 
-        //listening for disconnected
         socketRef.current.on(ACTIONS.DISCONNECTED, ({ socketId, username }) => {
           toast.success(`${username} left the room.`);
           setClients((prev) => {
@@ -71,8 +110,10 @@ const EditorPage = () => {
           });
         });
 
+        await connectToLiveKit();
+
       } catch (error) {
-        console.error('Failed to initialize socket:', error);
+        console.error('Failed to initialize:', error);
         toast.error('Failed to connect to server');
         reactNavigator('/');
       }
@@ -89,6 +130,7 @@ const EditorPage = () => {
         socketRef.current.off('connect_error');
         socketRef.current.off('connect_failed');
       }
+      disconnectFromRoom();
     };
 
   }, []);
@@ -103,6 +145,7 @@ const EditorPage = () => {
   }
 
   function leaveRoom() {
+    disconnectFromRoom();
     reactNavigator('/');
   }
 
@@ -119,18 +162,38 @@ const EditorPage = () => {
           </div>
           <h3>Connected</h3>
           <div className="clientsList">
-            {clients.map((client) => (
-              <Client key={client.socketId} username={client.username} />
-            ))}
+            {clients.map((client) => {
+              const isLocalUser = client.username === location.state?.username;
+              const videoTrack = isLocalUser ? localVideoTrack : getParticipantVideoTrack(client.username);
+              const audioTrack = isLocalUser ? localAudioTrack : getParticipantAudioTrack(client.username);
+              const isVideoEnabled = isLocalUser ? isVideoOn : isParticipantVideoEnabled(client.username);
+              const isAudioEnabled = isLocalUser ? isMicOn : isParticipantAudioEnabled(client.username);
+              
+              return (
+                <Client 
+                  key={client.socketId}
+                  username={client.username}
+                  videoTrack={videoTrack}
+                  audioTrack={audioTrack}
+                  isVideoEnabled={isVideoEnabled}
+                  isAudioEnabled={isAudioEnabled}
+                />
+              );
+            })}
           </div>
+          <MediaControls
+            isMicOn={isMicOn}
+            isVideoOn={isVideoOn}
+            onToggleMic={toggleMic}
+            onToggleVideo={toggleVideo}
+          />
+          <button className="btn copyBtn" onClick={copyRoomId}>
+            Copy Room ID
+          </button>
+          <button className="btn leaveBtn" onClick={leaveRoom}>
+            Leave
+          </button>
         </div>
-
-        <button className="btn copyBtn" onClick={copyRoomId}>
-          Copy ROOM ID
-        </button>
-        <button className="btn leaveBtn" onClick={leaveRoom}>
-          Leave
-        </button>
       </div>
       <div className="editorWrap">
         <Editor
@@ -142,8 +205,9 @@ const EditorPage = () => {
         />
         <CodeRun codeRef={codeRef} socketRef={socketRef} roomId={roomId} />
       </div>
+      <CodeRun code={codeRef.current} />
     </div>
   );
-}
+};
 
 export default EditorPage;
